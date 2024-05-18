@@ -799,8 +799,8 @@ func TestApplyDestinationRule(t *testing.T) {
 				t.Fatalf("Unexpected subset clusters want %v, got %v. keys=%v",
 					len(tt.expectedSubsetClusters), len(subsetClusters), xdstest.MapKeys(xdstest.ExtractClusters(subsetClusters)))
 			}
-			if len(tt.expectedSubsetClusters) > 0 {
-				compareClusters(t, tt.expectedSubsetClusters[0], subsetClusters[0])
+			for i := range tt.expectedSubsetClusters {
+				compareClusters(t, tt.expectedSubsetClusters[i], subsetClusters[i])
 			}
 			// Validate that use client protocol configures cluster correctly.
 			if tt.destRule != nil && tt.destRule.TrafficPolicy != nil && tt.destRule.TrafficPolicy.GetConnectionPool().GetHttp().GetUseClientProtocol() {
@@ -1140,7 +1140,7 @@ func TestBuildDefaultCluster(t *testing.T) {
 				MeshExternal: false,
 				Attributes:   model.ServiceAttributes{Name: "svc", Namespace: "default"},
 			}
-			defaultCluster := cb.buildCluster(tt.clusterName, tt.discovery, tt.endpoints, tt.direction, servicePort, service, nil)
+			defaultCluster := cb.buildCluster(tt.clusterName, tt.discovery, tt.endpoints, tt.direction, servicePort, service, nil, "")
 			eb := endpoints.NewCDSEndpointBuilder(proxy, cb.req.Push, tt.clusterName,
 				tt.direction, "", service.Hostname, servicePort.Port,
 				service, nil)
@@ -1248,7 +1248,7 @@ func TestClusterDnsLookupFamily(t *testing.T) {
 				MeshExternal: false,
 				Attributes:   model.ServiceAttributes{Name: "svc", Namespace: "default"},
 			}
-			defaultCluster := cb.buildCluster(tt.clusterName, tt.discovery, endpoints, model.TrafficDirectionOutbound, servicePort, service, nil)
+			defaultCluster := cb.buildCluster(tt.clusterName, tt.discovery, endpoints, model.TrafficDirectionOutbound, servicePort, service, nil, "")
 
 			if defaultCluster.build().DnsLookupFamily != tt.expectedFamily {
 				t.Errorf("Unexpected DnsLookupFamily, got: %v, want: %v", defaultCluster.build().DnsLookupFamily, tt.expectedFamily)
