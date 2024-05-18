@@ -52,6 +52,7 @@ import (
 	"istio.io/istio/pkg/config/constants"
 	"istio.io/istio/pkg/config/host"
 	"istio.io/istio/pkg/config/labels"
+	"istio.io/istio/pkg/config/mesh"
 	"istio.io/istio/pkg/config/protocol"
 	"istio.io/istio/pkg/config/schema/gvk"
 	"istio.io/istio/pkg/network"
@@ -111,6 +112,7 @@ func TestApplyDestinationRule(t *testing.T) {
 		proxyView              model.ProxyView
 		destRule               *networking.DestinationRule
 		expectedSubsetClusters []*cluster.Cluster
+		meshConfig             *meshconfig.MeshConfig
 	}{
 		// TODO(ramaraochavali): Add more tests to cover additional conditions.
 		{
@@ -698,6 +700,47 @@ func TestApplyDestinationRule(t *testing.T) {
 				EdsClusterConfig:     &cluster.Cluster_EdsClusterConfig{ServiceName: "outbound|8080|v1|foo.default.svc.cluster.local"},
 			}},
 		},
+		{
+			name:        "subset destination rule with tls mode MUTUAL, OutboundClusterStatName with service.subset.port",
+			cluster:     &cluster.Cluster{Name: "foo", ClusterDiscoveryType: &cluster.Cluster_Type{Type: cluster.Cluster_EDS}},
+			clusterMode: DefaultClusterMode,
+			service:     service,
+			port:        servicePort[0],
+			proxyView:   model.ProxyViewAll,
+			destRule: &networking.DestinationRule{
+				Host: "foo.default.svc.cluster.local",
+				Subsets: []*networking.Subset{
+					{
+						Name: "v1",
+						TrafficPolicy: &networking.TrafficPolicy{
+							Tls: &networking.ClientTLSSettings{Mode: networking.ClientTLSSettings_ISTIO_MUTUAL},
+						},
+					},
+					{
+						Name: "v2",
+						TrafficPolicy: &networking.TrafficPolicy{
+							Tls: &networking.ClientTLSSettings{Mode: networking.ClientTLSSettings_ISTIO_MUTUAL},
+						},
+					},
+				},
+			},
+			expectedSubsetClusters: []*cluster.Cluster{{
+				Name:                 "outbound|8080|v1|foo.default.svc.cluster.local",
+				ClusterDiscoveryType: &cluster.Cluster_Type{Type: cluster.Cluster_EDS},
+				EdsClusterConfig:     &cluster.Cluster_EdsClusterConfig{ServiceName: "outbound|8080|v1|foo.default.svc.cluster.local"},
+				AltStatName:          "foo.default.svc.cluster.local.v1.8080",
+			}, {
+				Name:                 "outbound|8080|v2|foo.default.svc.cluster.local",
+				ClusterDiscoveryType: &cluster.Cluster_Type{Type: cluster.Cluster_EDS},
+				EdsClusterConfig:     &cluster.Cluster_EdsClusterConfig{ServiceName: "outbound|8080|v2|foo.default.svc.cluster.local"},
+				AltStatName:          "foo.default.svc.cluster.local.v2.8080",
+			}},
+			meshConfig: func() *meshconfig.MeshConfig {
+				config := mesh.DefaultMeshConfig()
+				config.OutboundClusterStatName = "%SERVICE%.%SUBSET_NAME%.%SERVICE_PORT%"
+				return config
+			}(),
+		},
 	}
 
 	for _, tt := range cases {
@@ -735,6 +778,7 @@ func TestApplyDestinationRule(t *testing.T) {
 				Instances:      instances,
 				ConfigPointers: []*config.Config{cfg},
 				Services:       []*model.Service{tt.service},
+				MeshConfig:     tt.meshConfig,
 			})
 			proxy := cg.SetupProxy(nil)
 			cb := NewClusterBuilder(proxy, &model.PushRequest{Push: cg.PushContext()}, nil)
@@ -850,6 +894,9 @@ func compareClusters(t *testing.T, ec *cluster.Cluster, gc *cluster.Cluster) {
 		if ec.CircuitBreakers.Thresholds[0].MaxRetries.Value != gc.CircuitBreakers.Thresholds[0].MaxRetries.Value {
 			t.Errorf("Unexpected circuit breaker thresholds want %v, got %v", ec.CircuitBreakers.Thresholds[0].MaxRetries, gc.CircuitBreakers.Thresholds[0].MaxRetries)
 		}
+	}
+	if ec.AltStatName != gc.AltStatName {
+		t.Errorf("Unexpected cluster alt_stat_name want %s, got %s", ec.AltStatName, gc.AltStatName)
 	}
 }
 
